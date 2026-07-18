@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls, Line, Html, TransformControls } from '@react-three/drei'
+import { OrbitControls, Line, Html } from '@react-three/drei'
 import * as THREE from 'three'
 
 /* ================================================================== */
-/*  Álgebra lineal (vectores como arrays [x, y, z])                    */
+/*  Linear algebra (vectors as [a, b, c] arrays)                       */
 /* ================================================================== */
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -18,21 +18,17 @@ const cross = (a, b) => [
 ]
 const norm = (a) => Math.hypot(a[0], a[1], a[2])
 
-/** Plano por 3 puntos → { n, d, u, du, anchor } o null si son colineales. */
-function planeFromPoints(pts) {
-  const v1 = sub(pts[1], pts[0])
-  const v2 = sub(pts[2], pts[0])
-  const n = cross(v1, v2)
+/** Plane from equation k1·a + k2·b + k3·c = d → { n, d, u, du, anchor } or null. */
+function planeFromCoeffs(k1, k2, k3, d) {
+  const n = [k1, k2, k3]
   const len = norm(n)
-  const ref = norm(v1) * norm(v2)
-  if (ref < 1e-12 || len < 1e-7 * Math.max(1, ref)) return null
-  const d = dot(n, pts[0])
+  if (len < 1e-12) return null
   const u = scl(n, 1 / len)
   const du = d / len
   return { n, d, u, du, anchor: scl(u, du) }
 }
 
-/** Relación entre 2 planos: recta de corte, paralelos o coincidentes. */
+/** Relationship between 2 planes: crossing line, parallel, or coincident. */
 function pairRelation(p1, p2) {
   const c = cross(p1.u, p2.u)
   const L = norm(c)
@@ -42,26 +38,23 @@ function pairRelation(p1, p2) {
     return { type: coincident ? 'coincident' : 'parallel' }
   }
   const dir = scl(c, 1 / L)
-  // punto de la recta: ((d1·n2 − d2·n1) × (n1×n2)) / |n1×n2|²
+  // point on the line: ((d1·n2 − d2·n1) × (n1×n2)) / |n1×n2|²
   let q = scl(cross(sub(scl(p2.u, p1.du), scl(p1.u, p2.du)), c), 1 / (L * L))
-  q = sub(q, scl(dir, dot(q, dir))) // punto de la recta más cercano al origen
+  q = sub(q, scl(dir, dot(q, dir))) // closest point of the line to the origin
   return { type: 'line', line: { q, dir } }
 }
 
-/**
- * Clasifica el sistema formado por los planos activos.
- * items: [{ slot, plane }]
- */
+/** Classify the system formed by the active planes. items: [{slot, plane}] */
 function classify(items) {
   const m = items.length
   if (m === 0) return { kind: 'empty' }
-  if (m === 1) return { kind: 'one', slots: [items[0].slot] }
+  if (m === 1) return { kind: 'one', plane: items[0].plane }
 
   if (m === 2) {
     const rel = pairRelation(items[0].plane, items[1].plane)
     const slots = [items[0].slot, items[1].slot]
     if (rel.type === 'line') return { kind: 'two-line', line: rel.line, slots }
-    if (rel.type === 'coincident') return { kind: 'two-coincident', slots }
+    if (rel.type === 'coincident') return { kind: 'two-coincident', plane: items[0].plane, slots }
     return { kind: 'two-parallel', slots }
   }
 
@@ -88,12 +81,12 @@ function classify(items) {
 
   if (lines.length === 0) {
     const coinc = pairs.filter((p) => p.rel.type === 'coincident').length
-    if (coinc === 3) return { kind: 'plane' }
+    if (coinc === 3) return { kind: 'plane', plane: items[0].plane }
     if (coinc >= 1) return { kind: 'incompatible', subtype: 'coincident-parallel', pairLines: [] }
     return { kind: 'incompatible', subtype: 'all-parallel', pairLines: [] }
   }
 
-  // rango 2: ¿la recta de un par pertenece también al tercer plano?
+  // rank 2: does the line of one pair also lie on the third plane?
   const L0 = lines[0]
   const k = [0, 1, 2].find((x) => x !== L0.i && x !== L0.j)
   const contained = Math.abs(dot(u[k], L0.rel.line.q) - du[k]) < 1e-6 * (1 + Math.abs(du[k]))
@@ -109,7 +102,9 @@ function classify(items) {
   }
 }
 
-/* ---------- formato de números y ecuaciones ---------- */
+/* ---------- number, equation and parametric formatting ---------- */
+
+const VARS = ['a', 'b', 'c']
 
 function fmt(v, dec = 2) {
   if (!Number.isFinite(v)) return '–'
@@ -117,37 +112,13 @@ function fmt(v, dec = 2) {
   return String(Object.is(r, -0) ? 0 : r)
 }
 
-function gcd(a, b) {
-  a = Math.abs(a); b = Math.abs(b)
-  while (b) { [a, b] = [b, a % b] }
-  return a
-}
-
-/** Reduce (n, d) a la forma más legible posible (enteros chicos si se puede). */
-function reduceEq(n, d) {
-  let vals = [n[0], n[1], n[2], d]
-  const ints = vals.map((v) => Math.round(v))
-  const intish = vals.every((v, i) => Math.abs(v - ints[i]) < 1e-6 * Math.max(1, Math.abs(v)))
-  if (intish) {
-    const g = ints.reduce((acc, v) => gcd(acc, v), 0)
-    vals = g > 1 ? ints.map((v) => v / g) : ints
-  } else {
-    const mx = Math.max(Math.abs(vals[0]), Math.abs(vals[1]), Math.abs(vals[2]))
-    if (mx > 0) vals = vals.map((v) => v / mx)
-  }
-  const lead = [vals[0], vals[1], vals[2]].find((v) => Math.abs(v) > 1e-12)
-  if (lead < 0) vals = vals.map((v) => -v)
-  return { n: [vals[0], vals[1], vals[2]], d: vals[3] }
-}
-
 function eqString(n, d) {
-  const vars = ['x', 'y', 'z']
   const terms = []
-  n.forEach((c, i) => {
-    if (Math.abs(c) < 1e-10) return
-    const a = Math.abs(c)
-    const coef = Math.abs(a - 1) < 1e-10 ? '' : fmt(a)
-    terms.push({ neg: c < 0, text: coef + vars[i] })
+  n.forEach((k, i) => {
+    if (Math.abs(k) < 1e-10) return
+    const mag = Math.abs(k)
+    const coef = Math.abs(mag - 1) < 1e-10 ? '' : fmt(mag)
+    terms.push({ neg: k < 0, text: coef + VARS[i] })
   })
   if (!terms.length) return '0 = ' + fmt(d)
   let s = (terms[0].neg ? '−' : '') + terms[0].text
@@ -157,112 +128,126 @@ function eqString(n, d) {
 
 const fmtVec = (v) => `(${fmt(v[0])}, ${fmt(v[1])}, ${fmt(v[2])})`
 
-/** Dirección escalada para mostrar: componente máxima = 1 (o enteros chicos). */
-function displayDir(dir) {
-  const mx = Math.max(Math.abs(dir[0]), Math.abs(dir[1]), Math.abs(dir[2]))
-  if (mx < 1e-12) return dir
-  let v = scl(dir, 1 / mx)
-  const r = v.map((x) => Math.round(x))
-  if (v.every((x, i) => Math.abs(x - r[i]) < 1e-6)) v = r
-  return v
+/** Linear expression "c0 + k1·name1 + k2·name2" with tidy signs and 1s. */
+function linExpr(c0, terms) {
+  const parts = []
+  if (Math.abs(c0) > 1e-9) parts.push(fmt(c0))
+  terms.forEach(({ k, name }) => {
+    if (Math.abs(k) < 1e-9) return
+    const mag = Math.abs(Math.abs(k) - 1) < 1e-9 ? '' : fmt(Math.abs(k))
+    if (!parts.length) parts.push((k < 0 ? '−' : '') + mag + name)
+    else parts.push((k < 0 ? '− ' : '+ ') + mag + name)
+  })
+  if (!parts.length) return '0'
+  return parts.join(' ')
+}
+
+/** Parametric description of a line, using a coordinate as the free variable. */
+function paramLine(line) {
+  const { q, dir } = line
+  const mx = Math.max(...dir.map((v) => Math.abs(v)))
+  let j = 0
+  dir.forEach((v, i) => { if (Math.abs(v) >= 0.5 * mx) j = i }) // prefer the latest significant coordinate
+  const exprs = [0, 1, 2].map((i) => {
+    if (i === j) return VARS[j]
+    const k = dir[i] / dir[j]
+    return linExpr(q[i] - q[j] * k, [{ k, name: VARS[j] }])
+  })
+  return `(${exprs.join(', ')})`
+}
+
+/** Parametric description of a whole plane, solving for its first pivot variable. */
+function paramPlane(plane) {
+  const { n, d } = plane
+  const i0 = [0, 1, 2].find((i) => Math.abs(n[i]) > 1e-9)
+  if (i0 === undefined) return null
+  const exprs = [0, 1, 2].map((i) => {
+    if (i !== i0) return VARS[i]
+    const terms = [0, 1, 2]
+      .filter((k) => k !== i0)
+      .map((k) => ({ k: -n[k] / n[i0], name: VARS[k] }))
+    return linExpr(d / n[i0], terms)
+  })
+  return `(${exprs.join(', ')})`
 }
 
 /* ================================================================== */
-/*  Constantes de la herramienta                                       */
+/*  Tool constants                                                     */
 /* ================================================================== */
 
-const COLORS = ['#3b82f6', '#22c55e', '#f59e0b']
-const COLOR_NAMES = ['azul', 'verde', 'ámbar']
-const PT_LABELS = ['A', 'B', 'C']
+const COLORS = ['#3b82f6', '#f97316', '#22c55e']
+const COLOR_NAMES = ['blue', 'orange', 'green']
 const PLANE_HALF = 13
 const LINE_HALF = 22
 const WORLD = 15
 
 const VIEWS = {
-  iso: { pos: [19.5, -19.5, 14.5], up: [0, 0, 1], label: '3D' },
-  xy: { pos: [0, 0, 30], up: [0, 1, 0], label: 'XY' },
-  xz: { pos: [0, -30, 0], up: [0, 0, 1], label: 'XZ' },
-  yz: { pos: [30, 0, 0], up: [0, 0, 1], label: 'YZ' },
+  home: { pos: [19.5, -19.5, 14.5], up: [0, 0, 1], target: [0, 0, 0], label: 'Home' },
+  ab: { pos: [0, 0, 30], up: [0, 1, 0], target: [0, 0, 0], label: 'a | b' },
+  bc: { pos: [30, 0, 0], up: [0, 0, 1], target: [0, 0, 0], label: 'b | c' },
+  ac: { pos: [0, -30, 0], up: [0, 0, 1], target: [0, 0, 0], label: 'a | c' },
 }
 
 const PRESETS = [
   {
-    id: 'unica', label: 'Solución única — se cortan en 1 punto',
-    pts: [
-      [[9, 0, 0], [0, 9, 0], [0, 0, 9]],
-      [[0, 0, 0], [4, 4, 0], [0, 0, 4]],
-      [[0, 0, 3], [4, 0, 3], [0, 4, 3]],
-    ],
+    id: 's1', label: 'System 1 — unique solution (a point)',
+    coefs: [[1, 1, 1, 10], [1, 2, 1, 15], [1, 1, 2, 12]],
   },
   {
-    id: 'recta', label: 'Infinitas soluciones — recta común (libro abierto)',
-    pts: [
-      [[0, 0, 3], [5, 0, 3], [0, 5, 3]],
-      [[0, 0, 0], [5, 5, 0], [0, 0, 5]],
-      [[3, 0, 0], [0, -3, 0], [0, 3, 6]],
-    ],
+    id: 's2', label: 'System 2 — infinite solutions (a line)',
+    coefs: [[1, 1, 1, 10], [1, 1, 2, 15], [1, 1, 3, 20]],
   },
   {
-    id: 'coinc', label: 'Infinitas soluciones — 3 planos coincidentes',
-    pts: [
-      [[6, 0, 0], [0, 6, 0], [0, 0, 6]],
-      [[2, 2, 2], [4, 2, 0], [0, 4, 2]],
-      [[1, 2, 3], [3, 2, 1], [2, 0, 4]],
-    ],
+    id: 's3', label: 'System 3 — no solutions (prism)',
+    coefs: [[1, 1, 1, 10], [1, 1, 2, 17], [1, 1, 3, 18]],
   },
   {
-    id: 'prisma', label: 'Sin solución — prisma triangular',
-    pts: [
-      [[2, 0, 0], [2, 6, 0], [2, 0, 6]],
-      [[0, 2, 0], [6, 2, 0], [0, 2, 6]],
-      [[8, 0, 0], [0, 8, 0], [8, 0, 6]],
-    ],
+    id: 's4', label: 'System 4 — infinite solutions (a plane)',
+    coefs: [[1, 1, 1, 10], [2, 2, 2, 20], [3, 3, 3, 30]],
   },
   {
-    id: 'dospar', label: 'Sin solución — 2 paralelos + 1 transversal',
-    pts: [
-      [[0, 0, -3], [5, 0, -3], [0, 5, -3]],
-      [[0, 0, 3], [5, 0, 3], [0, 5, 3]],
-      [[2, 0, 0], [0, 0, 2], [2, 5, 0]],
-    ],
+    id: 's5', label: 'System 5 — no solutions (three parallel planes)',
+    coefs: [[0, 0, 1, -5], [0, 0, 1, 0], [0, 0, 1, 5]],
   },
   {
-    id: 'trespar', label: 'Sin solución — 3 planos paralelos',
-    pts: [
-      [[0, 0, -5], [5, 0, -5], [0, 5, -5]],
-      [[0, 0, 0], [5, 0, 0], [0, 5, 0]],
-      [[0, 0, 5], [5, 0, 5], [0, 5, 5]],
-    ],
+    id: 's6', label: 'System 6 — no solutions (two parallels, one crossing)',
+    coefs: [[0, 0, 1, -3], [0, 0, 1, 3], [1, 0, 1, 2]],
   },
 ]
 
-const emptyPts = () => [['', '', ''], ['', '', ''], ['', '', '']]
-const newPlane = (slot) => ({ slot, showPlane: true, showPoints: true, pts: emptyPts() })
+const planeFromPreset = (coefs, i) => ({
+  slot: i,
+  show: true,
+  coef: coefs.map(String),
+})
+const newPlane = (slot) => ({ slot, show: true, coef: ['', '', '', ''] })
 
-function parseCoord(s) {
+function parseToken(s) {
   const t = String(s).trim()
-  if (t === '' || t === '-' || t === '+') return NaN
+  if (t === '') return 0
+  if (t === '-' || t === '+') return NaN
   return Number(t.replace(',', '.'))
 }
 
 /* ================================================================== */
-/*  Componentes 3D                                                     */
+/*  3D components                                                      */
 /* ================================================================== */
 
 const noRaycast = () => null
 
 function AxesAndGrid({ showGrid, showAxes }) {
   const axes = [
-    { dir: [1, 0, 0], color: '#f87171', label: 'X', labelPos: [WORLD + 1.6, 0, 0], coneRot: [0, 0, -Math.PI / 2] },
-    { dir: [0, 1, 0], color: '#4ade80', label: 'Y', labelPos: [0, WORLD + 1.6, 0], coneRot: [0, 0, 0] },
-    { dir: [0, 0, 1], color: '#60a5fa', label: 'Z', labelPos: [0, 0, WORLD + 1.6], coneRot: [Math.PI / 2, 0, 0] },
+    { dir: [1, 0, 0], label: 'a', labelPos: [WORLD + 1.8, 0, 0], coneRot: [0, 0, -Math.PI / 2] },
+    { dir: [0, 1, 0], label: 'b', labelPos: [0, WORLD + 1.8, 0], coneRot: [0, 0, 0] },
+    { dir: [0, 0, 1], label: 'c', labelPos: [0, 0, WORLD + 1.8], coneRot: [Math.PI / 2, 0, 0] },
   ]
+  const axisColor = '#64748b'
   const ticks = [-10, -5, 5, 10]
   return (
     <group>
       {showGrid && (
         <gridHelper
-          args={[2 * WORLD, 2 * WORLD, '#31415e', '#1a2436']}
+          args={[2 * WORLD, 2 * WORLD, '#c3cedd', '#e4e9f2']}
           rotation={[Math.PI / 2, 0, 0]}
           raycast={noRaycast}
         />
@@ -271,18 +256,18 @@ function AxesAndGrid({ showGrid, showAxes }) {
         <group key={ax.label}>
           <Line
             points={[scl(ax.dir, -WORLD - 1), scl(ax.dir, WORLD + 1)]}
-            color={ax.color}
+            color={axisColor}
             lineWidth={1.6}
             transparent
-            opacity={0.85}
+            opacity={0.75}
             raycast={noRaycast}
           />
           <mesh position={scl(ax.dir, WORLD + 1)} rotation={ax.coneRot} raycast={noRaycast}>
             <coneGeometry args={[0.28, 0.9, 12]} />
-            <meshBasicMaterial color={ax.color} />
+            <meshBasicMaterial color={axisColor} />
           </mesh>
           <Html position={ax.labelPos} center zIndexRange={[40, 0]} style={{ pointerEvents: 'none' }}>
-            <div className="axisTag" style={{ color: ax.color }}>{ax.label}</div>
+            <div className="axisChip">{ax.label}</div>
           </Html>
           {ticks.map((t) => (
             <Html
@@ -341,62 +326,10 @@ function PlaneSurface({ plane, color, opacity, label }) {
           depthWrite={false}
         />
       </mesh>
-      <Line points={border} color={color} lineWidth={1.1} transparent opacity={0.75} raycast={noRaycast} />
+      <Line points={border} color={color} lineWidth={1.2} transparent opacity={0.55} raycast={noRaycast} />
       <Html position={labelPos} center zIndexRange={[40, 0]} style={{ pointerEvents: 'none' }}>
         <div className="tag3d" style={{ background: color }}>{label}</div>
       </Html>
-    </group>
-  )
-}
-
-function PlanePoints({ planeState, color, selected, onSelect, onMove }) {
-  const pts = planeState.pts.map((r) => r.map(parseCoord))
-  return (
-    <group>
-      {pts.map((p, i) => {
-        if (!p.every(Number.isFinite)) return null
-        const isSel = selected && selected.slot === planeState.slot && selected.idx === i
-        const sphere = (
-          <mesh
-            position={isSel ? undefined : p}
-            onClick={(e) => { e.stopPropagation(); onSelect({ slot: planeState.slot, idx: i }) }}
-            onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = 'pointer' }}
-            onPointerOut={() => { document.body.style.cursor = 'auto' }}
-          >
-            <sphereGeometry args={[isSel ? 0.38 : 0.3, 24, 24]} />
-            <meshStandardMaterial
-              color={color}
-              emissive={color}
-              emissiveIntensity={isSel ? 0.55 : 0.22}
-            />
-          </mesh>
-        )
-        return (
-          <group key={i}>
-            {isSel ? (
-              <TransformControls
-                position={p}
-                mode="translate"
-                translationSnap={0.5}
-                size={0.72}
-                onObjectChange={(e) => {
-                  const o = e?.target?.object
-                  if (o) onMove(planeState.slot, i, [o.position.x, o.position.y, o.position.z])
-                }}
-              >
-                {sphere}
-              </TransformControls>
-            ) : (
-              sphere
-            )}
-            <Html position={p} center zIndexRange={[40, 0]} style={{ pointerEvents: 'none' }}>
-              <div className="ptTag" style={{ borderColor: color }}>
-                {PT_LABELS[i]}{isSel ? ` ${fmtVec(p)}` : ''}
-              </div>
-            </Html>
-          </group>
-        )
-      })}
     </group>
   )
 }
@@ -434,7 +367,7 @@ function SolutionPoint({ point }) {
     <group>
       <mesh position={point} raycast={noRaycast}>
         <sphereGeometry args={[0.5, 32, 32]} />
-        <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.5} />
+        <meshStandardMaterial color="#dc2626" emissive="#dc2626" emissiveIntensity={0.3} />
       </mesh>
       <Html position={point} center zIndexRange={[45, 0]} style={{ pointerEvents: 'none' }}>
         <div className="coordTag">{fmtVec(point)}</div>
@@ -443,17 +376,19 @@ function SolutionPoint({ point }) {
   )
 }
 
-/** Anima la cámara hacia las vistas rápidas. Se cancela si el usuario orbita. */
+/** Animates the camera toward requested views. Cancels if the user orbits. */
 function CameraRig({ viewReq }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls)
   const target = useRef(null)
-  const zero = useMemo(() => new THREE.Vector3(0, 0, 0), [])
 
   useEffect(() => {
     if (!viewReq) return
     camera.up.set(...viewReq.up)
-    target.current = new THREE.Vector3(...viewReq.pos)
+    target.current = {
+      pos: new THREE.Vector3(...viewReq.pos),
+      look: new THREE.Vector3(...viewReq.target),
+    }
   }, [viewReq, camera])
 
   useEffect(() => {
@@ -466,135 +401,139 @@ function CameraRig({ viewReq }) {
   useFrame((_, dt) => {
     if (!target.current || !controls) return
     const k = 1 - Math.pow(0.0004, Math.min(dt, 0.05))
-    camera.position.lerp(target.current, k)
-    controls.target.lerp(zero, k)
+    camera.position.lerp(target.current.pos, k)
+    controls.target.lerp(target.current.look, k)
     controls.update()
-    if (camera.position.distanceTo(target.current) < 0.03) target.current = null
+    if (camera.position.distanceTo(target.current.pos) < 0.03) target.current = null
   })
   return null
 }
 
 /* ================================================================== */
-/*  Panel: diagnóstico                                                 */
+/*  Panel: diagnosis                                                   */
 /* ================================================================== */
 
-function diagnosisContent(sys, activeEqs) {
+function diagnosisContent(sys) {
   switch (sys.kind) {
     case 'empty':
       return {
         badge: null,
-        msg: 'Sin planos activos',
-        explain: 'Cargá los 3 puntos de un plano y tildá «Mostrar plano», o elegí un ejemplo arriba para empezar.',
+        msg: 'No active planes',
+        explain: 'Enter coefficients and check "Show plane", or pick a system above to get started.',
+        solution: null,
       }
     case 'one':
       return {
-        badge: ['info', 'Infinitas soluciones'],
-        msg: 'Un solo plano activo',
-        explain: 'Una ecuación con 3 incógnitas tiene infinitas soluciones: todos los puntos del plano la cumplen. Activá más planos para ver cómo se restringe el conjunto solución.',
+        badge: ['info', 'Infinite solutions'],
+        msg: 'One plane active',
+        explain: 'A single equation in three unknowns has infinitely many solutions: every point on the plane satisfies it. Add more planes to constrain the solution set.',
+        solution: { kind: 'plane', text: `plane ${paramPlane(sys.plane)}` },
       }
     case 'two-line':
       return {
-        badge: ['info', 'Infinitas soluciones'],
-        msg: 'Dos planos que se cortan en una recta',
-        explain: 'Con 2 ecuaciones y 3 incógnitas el sistema es compatible indeterminado: las soluciones son todos los puntos de la recta de intersección (violeta). Un tercer plano puede dejar un punto, una recta, o nada.',
+        badge: ['info', 'Infinite solutions'],
+        msg: 'Two planes meeting in a line',
+        explain: 'With two equations and three unknowns the system is consistent but underdetermined: the solutions are all the points on the purple line. A third plane can reduce this to a single point, keep the whole line, or leave no solution at all.',
+        solution: { kind: 'line', text: `line ${paramLine(sys.line)}` },
       }
     case 'two-parallel':
       return {
-        badge: ['bad', 'Sin solución'],
-        msg: 'Planos paralelos, sin intersección',
-        explain: 'Los dos planos tienen la misma dirección (normales paralelas) pero distinta posición: no comparten ningún punto. El sistema es incompatible.',
+        badge: ['bad', 'No solution'],
+        msg: 'Parallel planes — no intersection',
+        explain: 'The two planes share the same normal direction but sit at different offsets, so they never meet. The system is inconsistent.',
+        solution: { kind: 'none', text: 'no solutions' },
       }
     case 'two-coincident':
       return {
-        badge: ['info', 'Infinitas soluciones'],
-        msg: 'Dos planos coincidentes',
-        explain: 'Las dos ecuaciones son equivalentes (una es múltiplo de la otra): describen el mismo plano. Todo punto del plano es solución.',
+        badge: ['info', 'Infinite solutions'],
+        msg: 'Two coincident planes',
+        explain: 'The two equations are equivalent (one is a multiple of the other), so they describe the same plane. Every point of that plane is a solution.',
+        solution: { kind: 'plane', text: `plane ${paramPlane(sys.plane)}` },
       }
     case 'unique':
       return {
-        badge: ['ok', 'Solución única'],
-        msg: `Solución única en el punto ${fmtVec(sys.point)}`,
-        explain: 'Los tres planos se cortan en un único punto: es el único (x, y, z) que cumple las tres ecuaciones a la vez. Sistema compatible determinado (det(A) ≠ 0).',
+        badge: ['ok', 'Unique solution'],
+        msg: 'The three planes meet at one point',
+        explain: 'There is exactly one (a, b, c) that satisfies all three equations at once — a consistent, independent system (det(A) ≠ 0).',
+        solution: { kind: 'point', text: `point ${fmtVec(sys.point)}` },
       }
     case 'line':
       return {
-        badge: ['info', 'Infinitas soluciones'],
-        msg: 'Sistema con infinitas soluciones (recta común)',
+        badge: ['info', 'Infinite solutions'],
+        msg: 'The three planes share a common line',
         explain: (sys.hasCoincidentPair
-          ? 'Dos de los planos coinciden y el tercero los corta: '
-          : 'Los tres planos comparten una misma recta, como las hojas de un libro comparten el lomo: ')
-          + 'todos los puntos de la recta roja cumplen las tres ecuaciones. Sistema compatible indeterminado.',
+          ? 'Two of the planes coincide and the third cuts through them: '
+          : 'The three planes share one line, like pages of a book sharing the spine: ')
+          + 'every point on the red line satisfies all three equations.',
+        solution: { kind: 'line', text: `line ${paramLine(sys.line)}` },
       }
     case 'plane':
       return {
-        badge: ['info', 'Infinitas soluciones'],
-        msg: 'Los tres planos coinciden',
-        explain: 'Las tres ecuaciones son equivalentes entre sí: es tres veces el mismo plano. Todo punto del plano es solución (sistema compatible indeterminado).',
+        badge: ['info', 'Infinite solutions'],
+        msg: 'The three planes coincide',
+        explain: 'All three equations are equivalent — it is the same plane three times, so the whole plane is the solution set.',
+        solution: { kind: 'plane', text: `plane ${paramPlane(sys.plane)}` },
       }
     case 'incompatible': {
-      const sub = {
-        'all-parallel': 'Los tres planos son paralelos y están a distintas alturas: nunca se tocan.',
-        'coincident-parallel': 'Dos planos coinciden entre sí, pero el tercero es paralelo a ellos: nunca los toca.',
-        'two-parallel-cut': 'Dos planos son paralelos entre sí y el tercero los atraviesa: se forman dos rectas de corte paralelas que nunca se encuentran.',
-        'prism': 'Cada par de planos se corta en una recta, pero las tres rectas son paralelas entre sí (forman un prisma triangular): no existe ningún punto común a los tres.',
+      const why = {
+        'all-parallel': 'All three planes are parallel at different offsets — they never touch.',
+        'coincident-parallel': 'Two planes coincide, but the third is parallel to them and never meets them.',
+        'two-parallel-cut': 'Two planes are parallel and the third crosses both, producing two parallel intersection lines that never meet.',
+        'prism': 'Each pair of planes meets in a line, but the three lines are parallel to each other — the planes form a triangular prism with no common point.',
       }[sys.subtype]
       return {
-        badge: ['bad', 'Sin solución'],
-        msg: 'Sistema incompatible (sin solución)',
-        explain: sub + ' Ningún (x, y, z) cumple las tres ecuaciones a la vez.',
+        badge: ['bad', 'No solution'],
+        msg: 'Inconsistent system',
+        explain: why + ' No single (a, b, c) satisfies all three equations.',
+        solution: { kind: 'none', text: 'no solutions' },
       }
     }
     default:
-      return { badge: null, msg: '', explain: '' }
+      return { badge: null, msg: '', explain: '', solution: null }
   }
 }
 
 function DiagnosticCard({ sys, activeItems }) {
-  const { badge, msg, explain } = diagnosisContent(sys, activeItems)
-  const eqs = activeItems.map((it) => {
-    const r = reduceEq(it.plane.n, it.plane.d)
-    return { slot: it.slot, str: eqString(r.n, r.d), red: r }
-  })
+  const { badge, msg, explain, solution } = diagnosisContent(sys)
 
   let detInfo = null
   if (activeItems.length === 3) {
-    const [a, b, c] = eqs.map((e) => e.red.n)
+    const [a, b, c] = activeItems.map((it) => it.plane.n)
     const det = dot(a, cross(b, c))
     detInfo = { det, singular: Math.abs(det) < 1e-9 }
   }
 
   return (
     <div className="card">
-      <h2>Diagnóstico del sistema</h2>
-      {eqs.length > 0 && (
-        <div className="eqList">
-          {eqs.map((e) => (
-            <div className="eqItem" key={e.slot}>
-              <span className="dot" style={{ background: COLORS[e.slot] }} />
-              <span>{e.str}</span>
-            </div>
-          ))}
+      <h2>System diagnosis</h2>
+      {activeItems.length > 0 && (
+        <div className="eqSystem">
+          <span className="brace">{'{'}</span>
+          <div className="eqList">
+            {activeItems.map((it) => (
+              <div className="eqItem" key={it.slot} style={{ color: COLORS[it.slot] }}>
+                {eqString(it.plane.n, it.plane.d)}
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {badge && <span className={`badge ${badge[0]}`}>{badge[1]}</span>}
       <p className="diagMsg">{msg}</p>
+      {solution && (
+        <div className="solutionRow">
+          <span className="solLabel">Solution:</span>
+          <span className={`solValue ${solution.kind === 'none' ? 'noSol' : ''}`}>
+            {solution.text}
+          </span>
+        </div>
+      )}
       <p className="diagExplain">{explain}</p>
-
-      {sys.kind === 'unique' && (
-        <div className="diagData">
-          x = {fmt(sys.point[0])}&nbsp;&nbsp;y = {fmt(sys.point[1])}&nbsp;&nbsp;z = {fmt(sys.point[2])}
-        </div>
-      )}
-      {(sys.kind === 'line' || sys.kind === 'two-line') && sys.line && (
-        <div className="diagData">
-          Recta: P = {fmtVec(sys.line.q)} + t·{fmtVec(displayDir(sys.line.dir))}
-        </div>
-      )}
       {detInfo && (
         <div className="detLine">
-          det(A) = {fmt(detInfo.det)} {detInfo.singular
-            ? '→ matriz singular: no hay solución única'
-            : '→ ≠ 0: solución única garantizada'}
+          det(A) = {fmt(detInfo.det)} — {detInfo.singular
+            ? 'singular matrix: no unique solution'
+            : 'nonzero, so a unique solution exists'}
         </div>
       )}
     </div>
@@ -602,71 +541,79 @@ function DiagnosticCard({ sys, activeItems }) {
 }
 
 /* ================================================================== */
-/*  Panel: tarjeta de plano                                            */
+/*  Panel: plane card                                                  */
 /* ================================================================== */
 
-function PlaneCard({ planeState, status, plane, onChange, onRemove }) {
+function PlaneCard({ planeState, status, plane, onChange, onToggle, onView, onRemove }) {
   const color = COLORS[planeState.slot]
-  const reduced = plane ? reduceEq(plane.n, plane.d) : null
   return (
-    <div className="card" style={{ borderColor: color + '55' }}>
+    <div className="card planeCard" style={{ borderColor: color + '55' }}>
       <div className="cardHead">
         <span className="dot" style={{ background: color }} />
-        <span className="planeName">Plano {planeState.slot + 1}</span>
-        {reduced && <span className="eqInline">{eqString(reduced.n, reduced.d)}</span>}
-        <button className="delBtn" title="Eliminar plano" onClick={onRemove}>✕</button>
+        <span className="planeName">Plane {planeState.slot + 1}</span>
+        {plane && <span className="eqInline">{eqString(plane.n, plane.d)}</span>}
+        <button className="delBtn" title="Remove this plane" onClick={onRemove}>✕</button>
       </div>
 
-      <div className="axisHeads"><span>·</span><span>x</span><span>y</span><span>z</span></div>
-      {planeState.pts.map((row, i) => (
-        <div className="ptRow" key={i}>
-          <span className="ptLabel" style={{ background: color }}>{PT_LABELS[i]}</span>
-          {row.map((val, j) => (
+      <div className="eqRow">
+        {[0, 1, 2].map((j) => (
+          <React.Fragment key={j}>
             <input
-              key={j}
-              className="coordInput"
+              className="coefInput"
               type="number"
-              step="0.5"
+              step="1"
               placeholder="0"
-              value={val}
-              onChange={(e) => onChange(i, j, e.target.value)}
+              value={planeState.coef[j]}
+              onChange={(e) => onChange(j, e.target.value)}
+              aria-label={`coefficient of ${VARS[j]}`}
             />
-          ))}
-        </div>
-      ))}
+            <span className="eqLit">{VARS[j]}&nbsp;{j < 2 ? '+' : '='}</span>
+          </React.Fragment>
+        ))}
+        <input
+          className="coefInput"
+          type="number"
+          step="1"
+          placeholder="0"
+          value={planeState.coef[3]}
+          onChange={(e) => onChange(3, e.target.value)}
+          aria-label="constant term"
+        />
+      </div>
 
-      {status === 'incomplete' && (
-        <p className="hint">Ingresá las 9 coordenadas (3 puntos) para definir el plano.</p>
+      {status === 'blank' && (
+        <p className="hint">Type the four numbers of the equation to create this plane.</p>
       )}
-      {status === 'collinear' && (
+      {status === 'invalid' && (
+        <p className="warn">Some values are not valid numbers — check the inputs above.</p>
+      )}
+      {status === 'degenerate' && (
         <p className="warn">
-          ⚠ Los 3 puntos están alineados (colineales): infinitos planos pasan por ellos, ninguno queda
-          definido. Mové alguno para que formen un triángulo.
+          The a, b and c coefficients are all 0, so this is not a plane. Set at least one of them.
         </p>
       )}
       {plane && (
-        <p className="normalInfo">normal n = {fmtVec(reduced.n)}</p>
+        <p className="normalInfo">normal vector n = {fmtVec(plane.n)}</p>
       )}
 
-      <div className="checks">
+      <div className="cardActions">
         <label className="check">
           <input
             type="checkbox"
             style={{ accentColor: color }}
-            checked={planeState.showPlane}
-            onChange={(e) => onChange('showPlane', null, e.target.checked)}
+            checked={planeState.show}
+            onChange={(e) => onToggle(e.target.checked)}
           />
-          Mostrar plano
+          Show plane
         </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            style={{ accentColor: color }}
-            checked={planeState.showPoints}
-            onChange={(e) => onChange('showPoints', null, e.target.checked)}
-          />
-          Mostrar puntos
-        </label>
+        <button
+          className="viewBtnSm"
+          disabled={!plane}
+          onClick={onView}
+          title="Move the camera to look at this plane face-on"
+        >
+          View
+        </button>
       </div>
     </div>
   )
@@ -677,13 +624,12 @@ function PlaneCard({ planeState, status, plane, onChange, onRemove }) {
 /* ================================================================== */
 
 export default function App() {
-  const [planes, setPlanes] = useState([newPlane(0)])
-  const [selected, setSelected] = useState(null) // {slot, idx}
+  const [planes, setPlanes] = useState(() => PRESETS[0].coefs.map(planeFromPreset))
 
   const [showGrid, setShowGrid] = useState(true)
   const [showAxes, setShowAxes] = useState(true)
   const [autoRotate, setAutoRotate] = useState(false)
-  const [opacity, setOpacity] = useState(0.42)
+  const [opacity, setOpacity] = useState(0.45)
 
   const [showSolPoint, setShowSolPoint] = useState(true)
   const [showSolLine, setShowSolLine] = useState(true)
@@ -691,20 +637,21 @@ export default function App() {
   const [showPairLinesUnique, setShowPairLinesUnique] = useState(false)
 
   const [viewReq, setViewReq] = useState(null)
-  const [activeView, setActiveView] = useState('iso')
+  const [activeView, setActiveView] = useState('home')
 
-  /* derivados */
+  /* derived */
   const derived = useMemo(() => planes.map((p) => {
-    const nums = p.pts.map((r) => r.map(parseCoord))
-    const complete = nums.every((r) => r.every(Number.isFinite))
-    const plane = complete ? planeFromPoints(nums) : null
-    const status = !complete ? 'incomplete' : !plane ? 'collinear' : 'ok'
-    return { state: p, nums, plane, status }
+    const blank = p.coef.every((s) => String(s).trim() === '')
+    const nums = p.coef.map(parseToken)
+    const invalid = nums.some((v) => !Number.isFinite(v))
+    const plane = blank || invalid ? null : planeFromCoeffs(nums[0], nums[1], nums[2], nums[3])
+    const status = blank ? 'blank' : invalid ? 'invalid' : !plane ? 'degenerate' : 'ok'
+    return { state: p, plane, status }
   }), [planes])
 
   const activeItems = useMemo(
     () => derived
-      .filter((d) => d.status === 'ok' && d.state.showPlane)
+      .filter((d) => d.status === 'ok' && d.state.show)
       .map((d) => ({ slot: d.state.slot, plane: d.plane })),
     [derived]
   )
@@ -712,24 +659,17 @@ export default function App() {
   const sys = useMemo(() => classify(activeItems), [activeItems])
 
   /* handlers */
-  const updatePlane = (slot) => (i, j, value) => {
+  const setCoef = (slot) => (j, value) => {
     setPlanes((ps) => ps.map((p) => {
       if (p.slot !== slot) return p
-      if (i === 'showPlane') return { ...p, showPlane: value }
-      if (i === 'showPoints') return { ...p, showPoints: value }
-      const pts = p.pts.map((r) => [...r])
-      pts[i][j] = value
-      return { ...p, pts }
+      const coef = [...p.coef]
+      coef[j] = value
+      return { ...p, coef }
     }))
   }
 
-  const movePoint = (slot, idx, xyz) => {
-    setPlanes((ps) => ps.map((p) => {
-      if (p.slot !== slot) return p
-      const pts = p.pts.map((r) => [...r])
-      pts[idx] = xyz.map((v) => fmt(v))
-      return { ...p, pts }
-    }))
+  const toggleShow = (slot) => (value) => {
+    setPlanes((ps) => ps.map((p) => (p.slot === slot ? { ...p, show: value } : p)))
   }
 
   const addPlane = () => {
@@ -741,21 +681,11 @@ export default function App() {
     })
   }
 
-  const removePlane = (slot) => {
-    setPlanes((ps) => ps.filter((p) => p.slot !== slot))
-    setSelected((s) => (s && s.slot === slot ? null : s))
-  }
+  const removePlane = (slot) => setPlanes((ps) => ps.filter((p) => p.slot !== slot))
 
   const loadPreset = (id) => {
     const preset = PRESETS.find((p) => p.id === id)
-    if (!preset) return
-    setSelected(null)
-    setPlanes(preset.pts.map((pts, i) => ({
-      slot: i,
-      showPlane: true,
-      showPoints: true,
-      pts: pts.map((row) => row.map(String)),
-    })))
+    if (preset) setPlanes(preset.coefs.map(planeFromPreset))
   }
 
   const goView = (key) => {
@@ -763,13 +693,18 @@ export default function App() {
     setViewReq({ ...VIEWS[key], t: Date.now() })
   }
 
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') setSelected(null) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  const goPlaneView = (plane) => {
+    const [, b2] = planeBasis(plane.u)
+    setActiveView(null)
+    setViewReq({
+      pos: add(plane.anchor, scl(plane.u, 30)),
+      up: b2,
+      target: plane.anchor,
+      t: Date.now(),
+    })
+  }
 
-  /* qué se dibuja según el caso */
+  /* what gets drawn for the current case */
   const drawSolPoint = sys.kind === 'unique' && showSolPoint
   const drawSolLine = sys.kind === 'line' && showSolLine && sys.line
   const drawTwoLine = sys.kind === 'two-line' && showPairLines && sys.line
@@ -777,92 +712,83 @@ export default function App() {
     (sys.kind === 'incompatible' && showPairLines && sys.pairLines?.length > 0) ||
     (sys.kind === 'unique' && showPairLinesUnique)
 
-  const status = diagnosisContent(sys, activeItems)
-  const chipColor = { ok: '#22c55e', info: '#3b82f6', bad: '#ef4444' }[status.badge?.[0]] ?? '#64748b'
+  const status = diagnosisContent(sys)
+  const chipColor = { ok: '#16a34a', info: '#2563eb', bad: '#dc2626' }[status.badge?.[0]] ?? '#94a3b8'
+  const nextSlot = [0, 1, 2].find((s) => !planes.some((p) => p.slot === s))
 
   return (
     <div className="app">
-      {/* ------------ escena 3D ------------ */}
+      {/* ------------ 3D scene ------------ */}
       <div className="viewport">
         <div className="statusChip">
           <span className="dotSm" style={{ background: chipColor }} />
-          <span>{status.msg}</span>
+          <span>{status.solution ? status.solution.text : status.msg}</span>
         </div>
 
-        {selected && (
-          <div className="statusChip" style={{ top: 56 }}>
-            <span className="dotSm" style={{ background: COLORS[selected.slot] }} />
-            <span>
-              Editando P{selected.slot + 1}·{PT_LABELS[selected.idx]} — arrastrá las flechas · Esc suelta
-            </span>
-          </div>
-        )}
         <div className="overlayViews">
-          {Object.entries(VIEWS).map(([key, v]) => (
+          <button
+            className={`viewBtn ${autoRotate ? 'active' : ''}`}
+            onClick={() => setAutoRotate((v) => !v)}
+            title="Auto-rotate the camera"
+          >
+            ⟳
+          </button>
+          <span className="vSep" />
+          {['ab', 'bc', 'ac'].map((key) => (
             <button
               key={key}
               className={`viewBtn ${activeView === key ? 'active' : ''}`}
               onClick={() => goView(key)}
-              title={key === 'iso' ? 'Vista isométrica libre' : `Mirar el plano ${v.label}`}
+              title={`Look straight at the ${VIEWS[key].label.replace(' | ', '–')} plane`}
             >
-              {v.label}
+              {VIEWS[key].label}
             </button>
           ))}
+          <span className="vSep" />
           <button
-            className={`viewBtn ${autoRotate ? 'active' : ''}`}
-            onClick={() => setAutoRotate((v) => !v)}
-            title="Rotación automática"
+            className={`viewBtn ${activeView === 'home' ? 'active' : ''}`}
+            onClick={() => goView('home')}
+            title="Back to the default 3D view"
           >
-            ⟳
+            ⌂ View
           </button>
         </div>
 
         <Canvas
           dpr={[1, 2]}
-          camera={{ position: VIEWS.iso.pos, up: VIEWS.iso.up, fov: 45, near: 0.1, far: 500 }}
-          onPointerMissed={() => setSelected(null)}
+          camera={{ position: VIEWS.home.pos, up: VIEWS.home.up, fov: 45, near: 0.1, far: 500 }}
         >
-          <color attach="background" args={['#0b1120']} />
-          <ambientLight intensity={0.85} />
-          <directionalLight position={[12, -14, 20]} intensity={0.9} />
-          <directionalLight position={[-10, 12, -8]} intensity={0.35} />
+          <color attach="background" args={['#ffffff']} />
+          <ambientLight intensity={1.1} />
+          <directionalLight position={[12, -14, 20]} intensity={0.5} />
+          <directionalLight position={[-10, 12, -8]} intensity={0.22} />
 
           <AxesAndGrid showGrid={showGrid} showAxes={showAxes} />
 
           {derived.map((d) => (
-            <group key={d.state.slot}>
-              {d.status === 'ok' && d.state.showPlane && (
-                <PlaneSurface
-                  plane={d.plane}
-                  color={COLORS[d.state.slot]}
-                  opacity={opacity}
-                  label={`P${d.state.slot + 1}`}
-                />
-              )}
-              {d.state.showPoints && (
-                <PlanePoints
-                  planeState={d.state}
-                  color={COLORS[d.state.slot]}
-                  selected={selected}
-                  onSelect={setSelected}
-                  onMove={movePoint}
-                />
-              )}
-            </group>
+            d.status === 'ok' && d.state.show ? (
+              <PlaneSurface
+                key={d.state.slot}
+                plane={d.plane}
+                color={COLORS[d.state.slot]}
+                opacity={opacity}
+                label={`P${d.state.slot + 1}`}
+              />
+            ) : null
           ))}
 
           {drawTwoLine && (
-            <InterLine line={sys.line} color="#a855f7" lineWidth={3}
+            <InterLine line={sys.line} color="#7c3aed" lineWidth={3}
               label={`P${sys.slots[0] + 1} ∩ P${sys.slots[1] + 1}`} />
           )}
           {drawSolLine && (
-            <InterLine line={sys.line} color="#ef4444" lineWidth={4} label="recta solución" />
+            <InterLine line={sys.line} color="#dc2626" lineWidth={4} label="solution line" />
           )}
           {drawPairLines && sys.pairLines?.map((pl, i) => (
             <InterLine
               key={i}
               line={pl.line}
-              color="#9ca3af"
+              color="#64748b"
               lineWidth={1.6}
               dashed
               label={`P${pl.slots[0] + 1} ∩ P${pl.slots[1] + 1}`}
@@ -883,20 +809,20 @@ export default function App() {
         </Canvas>
       </div>
 
-      {/* ------------ panel lateral ------------ */}
+      {/* ------------ side panel ------------ */}
       <div className="panel">
         <div className="panelHeader">
-          <h1>Sistemas de ecuaciones 3×3</h1>
+          <h1>3×3 Systems of Equations</h1>
           <p>
-            Cada ecuación lineal en x, y, z es un plano. Resolver el sistema es encontrar los
-            puntos comunes a los tres planos.
+            Each linear equation in a, b and c is a plane in space. Solving the system means
+            finding the points that all planes share.
           </p>
         </div>
 
         <div className="card">
-          <h2>Ejemplos para explorar</h2>
+          <h2>Choose a system of equations</h2>
           <select className="select" value="" onChange={(e) => loadPreset(e.target.value)}>
-            <option value="" disabled>Cargar un ejemplo…</option>
+            <option value="" disabled>Load an example…</option>
             {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
         </div>
@@ -911,60 +837,64 @@ export default function App() {
               planeState={p}
               status={d.status}
               plane={d.plane}
-              onChange={updatePlane(p.slot)}
+              onChange={setCoef(p.slot)}
+              onToggle={toggleShow(p.slot)}
+              onView={() => d.plane && goPlaneView(d.plane)}
               onRemove={() => removePlane(p.slot)}
             />
           )
         })}
 
-        <button className="addBtn" onClick={addPlane} disabled={planes.length >= 3}>
-          + Agregar plano {planes.length < 3 ? `(${COLOR_NAMES[[0, 1, 2].find((s) => !planes.some((p) => p.slot === s))]})` : ''}
-        </button>
+        {planes.length < 3 && (
+          <button className="addBtn" onClick={addPlane}>
+            + Add plane ({COLOR_NAMES[nextSlot]})
+          </button>
+        )}
 
         <div className="card">
-          <h2>Visualización</h2>
+          <h2>Display options</h2>
           <div className="checks">
             {sys.kind === 'unique' && (
               <>
                 <label className="check stack">
                   <input type="checkbox" checked={showSolPoint}
-                    onChange={(e) => setShowSolPoint(e.target.checked)} style={{ accentColor: '#ef4444' }} />
-                  Punto de solución (esfera roja)
+                    onChange={(e) => setShowSolPoint(e.target.checked)} style={{ accentColor: '#dc2626' }} />
+                  Solution point (red)
                 </label>
                 <label className="check stack">
                   <input type="checkbox" checked={showPairLinesUnique}
-                    onChange={(e) => setShowPairLinesUnique(e.target.checked)} style={{ accentColor: '#9ca3af' }} />
-                  <span>Rectas de corte por pares&nbsp;<small>(las 3 pasan por la solución)</small></span>
+                    onChange={(e) => setShowPairLinesUnique(e.target.checked)} style={{ accentColor: '#64748b' }} />
+                  <span>Pairwise intersection lines&nbsp;<small>(all three pass through the solution)</small></span>
                 </label>
               </>
             )}
             {sys.kind === 'line' && (
               <label className="check stack">
                 <input type="checkbox" checked={showSolLine}
-                  onChange={(e) => setShowSolLine(e.target.checked)} style={{ accentColor: '#ef4444' }} />
-                Recta de soluciones (roja)
+                  onChange={(e) => setShowSolLine(e.target.checked)} style={{ accentColor: '#dc2626' }} />
+                Solution line (red)
               </label>
             )}
             {(sys.kind === 'incompatible' || sys.kind === 'two-line') && (
               <label className="check stack">
                 <input type="checkbox" checked={showPairLines}
-                  onChange={(e) => setShowPairLines(e.target.checked)} style={{ accentColor: '#9ca3af' }} />
-                Rectas de intersección {sys.kind === 'two-line' ? '' : 'por pares'}
+                  onChange={(e) => setShowPairLines(e.target.checked)} style={{ accentColor: '#64748b' }} />
+                {sys.kind === 'two-line' ? 'Intersection line' : 'Pairwise intersection lines'}
               </label>
             )}
             <label className="check stack">
               <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
-              Grilla en el plano XY
+              Grid (a–b plane)
             </label>
             <label className="check stack">
               <input type="checkbox" checked={showAxes} onChange={(e) => setShowAxes(e.target.checked)} />
-              Ejes y escala numérica
+              Axes and scale
             </label>
           </div>
           <div className="sliderRow">
-            <span>Opacidad</span>
+            <span>Plane opacity</span>
             <input
-              type="range" min="0.12" max="0.8" step="0.02"
+              type="range" min="0.15" max="0.8" step="0.02"
               value={opacity}
               onChange={(e) => setOpacity(Number(e.target.value))}
             />
@@ -973,15 +903,22 @@ export default function App() {
 
         <div className="card legend">
           <details>
-            <summary>Cómo usar la herramienta</summary>
+            <summary>How to use</summary>
             <ul>
-              <li><b>Rotar:</b> click y arrastrar · <b>Zoom:</b> rueda · <b>Pan:</b> click derecho.</li>
-              <li>Hacé <b>click en un punto</b> (esfera) para agarrarlo y arrastrarlo con las flechas 3D; los planos se recalculan en vivo. <span className="kbd">Esc</span> lo suelta.</li>
-              <li>Cada plano necesita 3 puntos <b>no alineados</b>: dos puntos definen una recta, el tercero “levanta” el plano.</li>
-              <li>Probá mover un solo punto de un ejemplo y mirá cómo cambia el diagnóstico: es la mejor forma de entender cada caso.</li>
-              <li>Las vistas <b>XY / XZ / YZ</b> sirven para verificar paralelismos: dos planos paralelos se ven como dos rectas paralelas de canto.</li>
+              <li><b>Rotate:</b> drag &nbsp;·&nbsp; <b>Zoom:</b> scroll &nbsp;·&nbsp; <b>Pan:</b> right-drag.</li>
+              <li>Each equation (like <span className="mono">a + b + c = 10</span>) is one plane. Edit the four numbers and everything updates live.</li>
+              <li>The three coefficients form the plane&rsquo;s <b>normal vector</b> — they set its tilt. The right-hand side slides the plane along that normal.</li>
+              <li>Press <b>View</b> on a plane card to face that plane head-on, or use <b>a|b, b|c, a|c</b> to spot parallel planes: seen edge-on, they become parallel lines.</li>
+              <li>Load the example systems to see every possible outcome of a 3×3 system.</li>
             </ul>
           </details>
+        </div>
+
+        <div className="footer">
+          Made for learning ·{' '}
+          <a href="https://linkedin.com/in/mcigramajofeijoo" target="_blank" rel="noreferrer">
+            say hi on LinkedIn
+          </a>
         </div>
       </div>
     </div>

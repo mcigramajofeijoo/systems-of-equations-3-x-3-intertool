@@ -1,47 +1,50 @@
-# Sistemas de ecuaciones 3×3 — Visualizador geométrico interactivo
+# 3×3 Systems of Equations — Interactive 3D Visualizer
 
-Herramienta web educativa para entender **visualmente** qué significa resolver un
-sistema de ecuaciones lineales de 3 variables (3×3): cada ecuación es un plano en el
-espacio, y la solución del sistema es el conjunto de puntos comunes a los tres planos.
+An educational web tool to **see** what solving a 3×3 system of linear equations means:
+each equation in a, b and c is a plane in space, and the solution of the system is the
+set of points shared by all three planes.
 
-**Demo en vivo:** https://mcigramajofeijoo.github.io/systems-of-equations-3-x-3-intertool/
+**Live demo:** https://mcigramajofeijoo.github.io/systems-of-equations-3-x-3-intertool/
 
-## Qué permite hacer
+## Features
 
-- Definir hasta **3 planos**, cada uno por 3 puntos (con inputs numéricos o
-  **arrastrando los puntos** directamente en la escena 3D con flechas de traslación).
-- Ver en tiempo real la **ecuación cartesiana** de cada plano (`ax + by + cz = d`),
-  su vector normal y el **determinante** de la matriz del sistema.
-- **Diagnóstico automático del sistema** con explicación geométrica:
-  - Solución única (punto rojo con coordenadas).
-  - Infinitas soluciones: recta común (roja) o planos coincidentes.
-  - Sin solución: paralelos, dos paralelos cortados por un tercero, o prisma
-    triangular (con las rectas de corte por pares en gris punteado).
-- **6 ejemplos precargados**, uno por cada tipo de sistema.
-- Cámara orbital, vistas rápidas XY / XZ / YZ / isométrica, rotación automática,
-  grilla y ejes con escala, control de opacidad de los planos.
+- Define up to **3 planes**, each from a single equation — enter the four numbers of
+  `k₁·a + k₂·b + k₃·c = d` and the plane appears instantly.
+- **Live system diagnosis** with the answer in the same format math courses use:
+  `point (3, 5, 2)`, `line (5 − b, b, 5)`, `plane (10 − b − c, b, c)`, or `no solutions`.
+- Geometric explanation of every case: unique intersection point, common line
+  (book-spine), coincident planes, triangular prism, parallel planes — with the
+  intersection point / red solution line / pairwise dashed lines drawn in 3D.
+- **6 example systems** (one per outcome), orbit camera, per-plane **View** button
+  (face any plane head-on), edge-on views `a|b`, `b|c`, `a|c` to spot parallel planes,
+  auto-rotate, grid, axes and plane-opacity controls.
+- det(A) shown live, tying the algebra to the geometry.
 
-## Estructura del repositorio
+## Repository layout
 
-| Ruta | Contenido |
+| Path | Contents |
 |---|---|
-| `index.html` | **Sitio publicado.** Archivo único autocontenido (React + three.js + react-three-fiber + drei y todos los estilos inline). No requiere build ni red externa: GitHub Pages lo sirve tal cual. |
-| `source/` | Código fuente (proyecto Vite + React). |
+| `index.html` | **The published site.** A single self-contained file (React + three.js + react-three-fiber + drei and all styles inlined). No build step and no external requests needed: GitHub Pages serves it as-is. |
+| `source/` | Source code (Vite + React project). |
 
-## Desarrollo (solo si querés modificar la herramienta)
+## Development (only if you want to modify the tool)
 
 ```bash
 cd source
 npm install
-npm run dev     # servidor local en http://localhost:5183
-npm run build   # regenera ../index.html (archivo único autocontenido)
+npm run dev     # local server at http://localhost:5183
+npm run build   # regenerates ../index.html (single self-contained file)
 ```
 
-El build usa `vite-plugin-singlefile`, así que el resultado es siempre un único
-`index.html` en la raíz del repo — no hay carpetas de assets ni rutas que puedan
-romperse al servir el sitio desde un subpath como `usuario.github.io/repo/`.
+The build uses `vite-plugin-singlefile`, so the output is always one `index.html` at
+the repo root — there are no asset folders or paths that could break when the site is
+served from a subpath like `username.github.io/repo/`.
 
-## Publicación en GitHub Pages
+## Publishing on GitHub Pages
 
 Settings → Pages → **Deploy from a branch** → Branch: `main` → Folder: `/ (root)`.
-No hace falta ningún workflow ni paso de build.
+No workflow or manual build step required.
+
+---
+
+Made for learning · [say hi on LinkedIn](https://linkedin.com/in/mcigramajofeijoo)

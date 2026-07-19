@@ -4,7 +4,7 @@ An educational web tool to **see** what solving a 3×3 system of linear equation
 each equation in a, b and c is a plane in space, and the solution of the system is the
 set of points shared by all three planes.
 
-**Live demo:** https://mcigramajofeijoo.github.io/systems-of-equations-3-x-3-intertool/
+**Live demo:** https://mcigramajofeijoo.github.io/sle-3x3-viz/
 
 ## Features
 

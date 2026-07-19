@@ -1091,7 +1091,7 @@ export default function App() {
             <p className="aboutText">
               Built with React and three.js. The code is open source on{' '}
               <a
-                href="https://github.com/mcigramajofeijoo/systems-of-equations-3-x-3-intertool"
+                href="https://github.com/mcigramajofeijoo/sle-3x3-viz"
                 target="_blank"
                 rel="noreferrer"
               >

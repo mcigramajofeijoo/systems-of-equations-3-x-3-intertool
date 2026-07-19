@@ -559,24 +559,32 @@ function DiagnosticCard({ sys, activeItems, solLabels, onSolLabels }) {
           </div>
         </div>
       )}
-      {badge && <span className={`badge ${badge[0]}`}>{badge[1]}</span>}
-      <p className="diagMsg">{msg}</p>
-      {solution && (
-        <div className="solutionRow">
-          <span className="solLabel">Solution:</span>
-          <span className={`solValue ${solution.kind === 'none' ? 'noSol' : ''}`}>
-            {solution.text}
-          </span>
+      {badge ? (
+        <div className={`verdict ${badge[0]}`}>
+          <div className="verdictTop">
+            <span className={`badge ${badge[0]}`}>{badge[1]}</span>
+            {detInfo && (
+              <span
+                className="detChip"
+                title={detInfo.singular
+                  ? 'det(A) = 0 — singular matrix, so there is no unique solution'
+                  : 'det(A) ≠ 0 — a unique solution is guaranteed'}
+              >
+                det(A) = {fmt(detInfo.det)}
+              </span>
+            )}
+          </div>
+          {solution && (
+            <div className={`solutionBig ${solution.kind === 'none' ? 'noSol' : ''}`}>
+              {solution.text}
+            </div>
+          )}
+          <p className="verdictMsg">{msg}</p>
         </div>
+      ) : (
+        <p className="diagMsg">{msg}</p>
       )}
       <p className="diagExplain">{explain}</p>
-      {detInfo && (
-        <div className="detLine">
-          det(A) = {fmt(detInfo.det)} — {detInfo.singular
-            ? 'singular matrix: no unique solution'
-            : 'nonzero, so a unique solution exists'}
-        </div>
-      )}
       <label className="check" style={{ marginTop: 10 }}
         title="Show or hide the solution and intersection tags in the 3D view">
         <input
@@ -1018,13 +1026,40 @@ export default function App() {
             <ul>
               <li><b>Rotate:</b> drag &nbsp;·&nbsp; <b>Zoom:</b> scroll &nbsp;·&nbsp; <b>Pan:</b> right-drag.</li>
               <li>Each equation (like <span className="mono">a + b + c = 10</span>) is one plane. Edit the four numbers and everything updates live.</li>
-              <li>The dots on the axes are the plane&rsquo;s <b>intercepts</b> (where it crosses each axis); the slightly darker triangle between them is the patch the infinite plane extends.</li>
+              <li>The dots on each axis are the plane&rsquo;s <b>intercepts</b> — the points where the plane crosses that axis.</li>
               <li>The three coefficients form the plane&rsquo;s <b>normal vector</b> — they set its tilt. The right-hand side slides the plane along that normal.</li>
               <li>Press <b>View</b> on a plane card to face that plane head-on, or open the <b>View</b> menu below the scene for the a|b, b|c, a|c and default camera angles — parallel planes seen edge-on become parallel lines.</li>
               <li>The <b>a|b, b|c, a|c</b> buttons below the scene toggle the reference grid on each coordinate plane.</li>
               <li>Too crowded? Hide tags per plane (<b>Labels</b>), the solution tags (in the diagnosis card), or the <b>Axis labels</b> (top-right of the scene).</li>
               <li>Load the example systems to see every possible outcome of a 3×3 system.</li>
             </ul>
+          </details>
+        </div>
+
+        <div className="card legend">
+          <details>
+            <summary>About This Tool</summary>
+            <p className="aboutText">
+              SLE – 3x3 is a free educational visualizer for systems of three linear
+              equations in three unknowns. Each equation defines a plane in space, and
+              the solution of the system is whatever the three planes share: a single
+              point, a whole line, a whole plane — or nothing at all.
+            </p>
+            <p className="aboutText">
+              It is meant as a companion for anyone first meeting linear algebra: type
+              any coefficients, load the classic example systems, and watch the algebra
+              and the geometry move together.
+            </p>
+            <p className="aboutText">
+              Built with React and three.js. The code is open source on{' '}
+              <a
+                href="https://github.com/mcigramajofeijoo/systems-of-equations-3-x-3-intertool"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub
+              </a>.
+            </p>
           </details>
         </div>
 

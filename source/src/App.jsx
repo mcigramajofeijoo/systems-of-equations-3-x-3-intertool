@@ -546,7 +546,7 @@ function DiagnosticCard({ sys, activeItems, solLabels, onSolLabels }) {
 
   return (
     <div className="card">
-      <h2>System diagnosis</h2>
+      <h2>System Diagnosis</h2>
       {activeItems.length > 0 && (
         <div className="eqSystem">
           <span className="brace">{'{'}</span>
@@ -597,11 +597,11 @@ function DiagnosticCard({ sys, activeItems, solLabels, onSolLabels }) {
 function PlaneCard({ planeState, status, plane, onChange, onToggle, onLabels, onView, onRemove }) {
   const color = COLORS[planeState.slot]
   return (
-    <div className="card planeCard" style={{ borderColor: color, boxShadow: `4px 4px 0 ${color}40` }}>
+    <div className="card planeCard">
       <div className="cardHead">
         <span className="dot" style={{ background: color }} />
         <span className="planeName">Plane {planeState.slot + 1}</span>
-        {plane && <span className="eqInline">{eqString(plane.n, plane.d)}</span>}
+        {plane && <span className="eqInline" style={{ color }}>{eqString(plane.n, plane.d)}</span>}
         <button className="delBtn" title="Remove this plane" onClick={onRemove}>✕</button>
       </div>
 
@@ -788,7 +788,10 @@ export default function App() {
     (sys.kind === 'unique' && showPairLinesUnique)
 
   const status = diagnosisContent(sys)
-  const chipColor = { ok: '#16a34a', info: '#2563eb', bad: '#dc2626' }[status.badge?.[0]] ?? '#94a3b8'
+  // chip dot mirrors what is drawn in the scene: red point/line, indigo plane, black none
+  const chipColor = !status.solution
+    ? '#9aa0aa'
+    : { point: '#dc2626', line: '#dc2626', plane: '#6155f5', none: '#111111' }[status.solution.kind]
   const nextSlot = [0, 1, 2].find((s) => !planes.some((p) => p.slot === s))
 
   return (
@@ -797,7 +800,10 @@ export default function App() {
       <div className="viewport">
         <div className="statusChip">
           <span className="dotSm" style={{ background: chipColor }} />
-          <span>{status.solution ? status.solution.text : status.msg}</span>
+          <span>
+            {(status.solution ? status.solution.text : status.msg)
+              .replace(/^(no solutions|point|line|plane|[a-z])/, (m) => m.toUpperCase())}
+          </span>
         </div>
 
         <label className="cornerToggle" title="Show or hide the a / b / c axis labels and tick numbers">
@@ -815,7 +821,7 @@ export default function App() {
             onClick={() => setAutoRotate((v) => !v)}
             title="Auto-rotate the camera"
           >
-            ⟳
+            Rotate
           </button>
           <span className="vSep" />
           {['ab', 'bc', 'ac'].map((key) => (
@@ -846,7 +852,7 @@ export default function App() {
                 ))}
                 <div className="menuSep" />
                 <button onClick={() => { goView('home'); setViewMenu(false) }}>
-                  ⌂ Default view
+                  Default view
                 </button>
               </div>
             )}
@@ -914,8 +920,7 @@ export default function App() {
       <div className="panel">
         <div className="panelHeader">
           <h1>
-            <span className="mega">3×3</span>
-            Systems of Equations
+            SLE – <span className="sup">3</span>x<span className="sup">3</span>
           </h1>
           <p>
             Each linear equation in a, b and c is a plane in space. Solving the system means
@@ -924,9 +929,9 @@ export default function App() {
         </div>
 
         <div className="card">
-          <h2>Choose a system of equations</h2>
+          <h2>Choose a System of Linear Equations</h2>
           <select className="select" value="" onChange={(e) => loadPreset(e.target.value)}>
-            <option value="" disabled>Load an example…</option>
+            <option value="" disabled>Select from examples...</option>
             {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
         </div>
@@ -962,7 +967,7 @@ export default function App() {
         )}
 
         <div className="card">
-          <h2>Display options</h2>
+          <h2>Display Options</h2>
           <div className="checks">
             {sys.kind === 'unique' && (
               <>
@@ -1009,7 +1014,7 @@ export default function App() {
 
         <div className="card legend">
           <details>
-            <summary>How to use</summary>
+            <summary>How to Use</summary>
             <ul>
               <li><b>Rotate:</b> drag &nbsp;·&nbsp; <b>Zoom:</b> scroll &nbsp;·&nbsp; <b>Pan:</b> right-drag.</li>
               <li>Each equation (like <span className="mono">a + b + c = 10</span>) is one plane. Edit the four numbers and everything updates live.</li>

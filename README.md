@@ -1,4 +1,4 @@
-# 3×3 Systems of Equations — Interactive 3D Visualizer
+# SLE – 3x3 · Systems of Linear Equations in 3D
 
 An educational web tool to **see** what solving a 3×3 system of linear equations means:
 each equation in a, b and c is a plane in space, and the solution of the system is the
@@ -11,7 +11,9 @@ set of points shared by all three planes.
 - Define up to **3 planes**, each from a single equation — enter the four numbers of
   `k₁·a + k₂·b + k₃·c = d` and the plane appears instantly.
 - **Live system diagnosis** with the answer in the same format math courses use:
-  `point (3, 5, 2)`, `line (5 − b, b, 5)`, `plane (10 − b − c, b, c)`, or `no solutions`.
+  `Point(3, 5, 2)`, `Line(5 - b, b, 5)`, `Plane(10 - b - c, b, c)`, or `No solutions` —
+  shown in a color-coded verdict panel (green for unique, indigo for infinite, red for
+  inconsistent) together with `det(A)`.
 - Geometric explanation of every case: unique intersection point, common line
   (book-spine), coincident planes, triangular prism, parallel planes — with the
   intersection point / red solution line / pairwise dashed lines drawn in 3D.
@@ -22,7 +24,6 @@ set of points shared by all three planes.
   auto-rotate, axes and plane-opacity controls.
 - Every 3D tag can be hidden — per plane, for the solution, or for the axes — so
   labels never block the geometry you are trying to see.
-- det(A) shown live, tying the algebra to the geometry.
 - Set in the Saans and Saans SemiMono typefaces.
 
 ## Repository layout

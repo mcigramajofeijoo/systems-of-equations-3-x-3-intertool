@@ -30,7 +30,7 @@ system is the set of points shared by all three planes — see it, rotate it, ch
 
 | Path | Contents |
 |---|---|
-| `index.html` | **The published site.** A single self-contained file (React + three.js + react-three-fiber + drei and all styles inlined). No build step and no external requests needed: GitHub Pages serves it as-is. |
+| `index.html` | **The published site.** A single self-contained file (React + three.js + react-three-fiber + drei and all styles inlined). No build step and no external asset requests: GitHub Pages serves it as-is (the page loads Google Analytics at runtime). |
 | `source/` | Source code (Vite + React project). |
 
 ## Development (only if you want to modify the tool)
